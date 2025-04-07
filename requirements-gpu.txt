@@ -1,0 +1,8 @@
+# GPU-specific dependencies
+torch>=1.9.0+cu111
+torchvision>=0.10.0+cu111
+
+# CUDA toolkit compatibility
+nvidia-cudnn-cu11>=8.2.0
+nvidia-cuda-runtime-cu11>=11.3.0
+nvidia-cuda-nvrtc-cu11>=11.3.0

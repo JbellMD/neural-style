@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Style Transfer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-paint-brush me-2"></i>Neural Style Transfer
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#about">About</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#examples">Examples</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/yourusername/neural-style" target="_blank">
+                            <i class="fab fa-github me-1"></i>GitHub
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-lg-8 mx-auto text-center">
+                <h1 class="display-4 mb-4">Neural Style Transfer</h1>
+                <p class="lead mb-5">
+                    Transform your photos into artistic masterpieces using deep learning.
+                    Upload a content image and select a style to create something unique!
+                </p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-4">
+                                    <h5 class="card-title">Content Image</h5>
+                                    <div class="image-upload-container" id="contentImageContainer">
+                                        <div class="image-preview" id="contentImagePreview">
+                                            <div class="upload-placeholder">
+                                                <i class="fas fa-image fa-3x mb-3"></i>
+                                                <p>Click to upload or drag an image here</p>
+                                            </div>
+                                            <img id="contentImage" class="img-fluid d-none" alt="Content Image">
+                                        </div>
+                                        <input type="file" id="contentImageInput" accept="image/jpeg, image/png" class="d-none">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-4">
+                                    <h5 class="card-title">Style Image</h5>
+                                    <div class="image-upload-container" id="styleImageContainer">
+                                        <div class="image-preview" id="styleImagePreview">
+                                            <div class="upload-placeholder">
+                                                <i class="fas fa-paint-brush fa-3x mb-3"></i>
+                                                <p>Click to upload or select from below</p>
+                                            </div>
+                                            <img id="styleImage" class="img-fluid d-none" alt="Style Image">
+                                        </div>
+                                        <input type="file" id="styleImageInput" accept="image/jpeg, image/png" class="d-none">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-4">
+                                    <h5 class="card-title">Result</h5>
+                                    <div class="image-result-container" id="resultImageContainer">
+                                        <div class="image-preview">
+                                            <div class="result-placeholder">
+                                                <i class="fas fa-magic fa-3x mb-3"></i>
+                                                <p>Your styled image will appear here</p>
+                                            </div>
+                                            <img id="resultImage" class="img-fluid d-none" alt="Result Image">
+                                            <div class="spinner-border text-primary d-none" id="loadingSpinner" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <h5>Predefined Styles</h5>
+                                <div class="style-gallery" id="styleGallery">
+                                    <!-- Predefined styles will be loaded here -->
+                                    <div class="text-center py-4" id="noStylesMessage">
+                                        <p class="text-muted">No predefined styles available</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Settings</h5>
+                                <div class="mb-3">
+                                    <label for="methodSelect" class="form-label">Method</label>
+                                    <select class="form-select" id="methodSelect">
+                                        <option value="vgg" selected>VGG (Gatys et al.)</option>
+                                        <option value="fast">Fast Neural Style</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="imageSizeRange" class="form-label">Image Size: <span id="imageSizeValue">512</span>px</label>
+                                    <input type="range" class="form-range" id="imageSizeRange" min="256" max="1024" step="64" value="512">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="styleWeightRange" class="form-label">Style Weight: <span id="styleWeightValue">1000000</span></label>
+                                    <input type="range" class="form-range" id="styleWeightRange" min="4" max="8" step="0.1" value="6">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="contentWeightRange" class="form-label">Content Weight: <span id="contentWeightValue">1</span></label>
+                                    <input type="range" class="form-range" id="contentWeightRange" min="0" max="2" step="0.1" value="1">
+                                </div>
+                                <div class="d-grid">
+                                    <button class="btn btn-primary" id="transferButton" disabled>
+                                        <i class="fas fa-magic me-2"></i>Apply Style Transfer
+                                    </button>
+                                </div>
+                                <div class="mt-3 text-center d-none" id="processingTimeContainer">
+                                    <p class="text-muted">Processing time: <span id="processingTime">0</span> seconds</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-5" id="about">
+            <div class="col-lg-10 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h2 class="card-title">About Neural Style Transfer</h2>
+                        <p>
+                            Neural Style Transfer is a technique that uses deep neural networks to apply the style of one image to the content of another.
+                            This application implements several methods for neural style transfer:
+                        </p>
+                        <ul>
+                            <li><strong>VGG-based Neural Style Transfer (Gatys et al.)</strong> - The original neural style transfer algorithm that uses optimization to generate styled images.</li>
+                            <li><strong>Fast Neural Style Transfer (Johnson et al.)</strong> - A feed-forward network that can generate styled images in real-time.</li>
+                        </ul>
+                        <p>
+                            The implementation uses PyTorch for deep learning and provides both a web interface and a command-line tool for applying style transfer.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-5 mb-5" id="examples">
+            <div class="col-lg-10 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h2 class="card-title">Examples</h2>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card mb-4">
+                                    <div class="card-header">Content</div>
+                                    <img src="/static/examples/content/landscape.jpg" class="card-img-top" alt="Content Image">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card mb-4">
+                                    <div class="card-header">Style</div>
+                                    <img src="/static/examples/styles/starry_night.jpg" class="card-img-top" alt="Style Image">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card mb-4">
+                                    <div class="card-header">Result</div>
+                                    <img src="/static/examples/results/landscape_starry_night.jpg" class="card-img-top" alt="Result Image">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container text-center">
+            <p>Neural Style Transfer Application &copy; 2023</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
