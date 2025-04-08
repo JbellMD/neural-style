@@ -17,30 +17,79 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const resultImage = document.getElementById('resultImage');
     const loadingSpinner = document.getElementById('loadingSpinner');
-    const processingTimeContainer = document.getElementById('processingTimeContainer');
-    const processingTime = document.getElementById('processingTime');
     
     const styleGallery = document.getElementById('styleGallery');
-    const noStylesMessage = document.getElementById('noStylesMessage');
     
     const transferButton = document.getElementById('transferButton');
+    const downloadButton = document.getElementById('downloadButton');
     
     const methodSelect = document.getElementById('methodSelect');
-    const imageSizeRange = document.getElementById('imageSizeRange');
-    const imageSizeValue = document.getElementById('imageSizeValue');
-    const styleWeightRange = document.getElementById('styleWeightRange');
+    const methodDescription = document.getElementById('methodDescription');
+    const imageSize = document.getElementById('imageSize');
+    
+    // Parameter controls
+    const iterationsContainer = document.getElementById('iterationsContainer');
+    const iterations = document.getElementById('iterations');
+    const iterationsValue = document.getElementById('iterationsValue');
+    
+    const styleWeightContainer = document.getElementById('styleWeightContainer');
+    const styleWeight = document.getElementById('styleWeight');
     const styleWeightValue = document.getElementById('styleWeightValue');
-    const contentWeightRange = document.getElementById('contentWeightRange');
+    
+    const contentWeightContainer = document.getElementById('contentWeightContainer');
+    const contentWeight = document.getElementById('contentWeight');
     const contentWeightValue = document.getElementById('contentWeightValue');
+    
+    const alphaContainer = document.getElementById('alphaContainer');
+    const alpha = document.getElementById('alpha');
+    const alphaValue = document.getElementById('alphaValue');
     
     // State
     let contentImageData = null;
     let styleImageData = null;
     let selectedStyleId = null;
+    let resultImageUrl = null;
+    
+    // Method descriptions
+    const methodDescriptions = {
+        'vgg': 'Original neural style transfer algorithm. Produces high-quality results but slower.',
+        'fast': 'Real-time style transfer using a pre-trained model. Very fast but limited to trained styles.',
+        'adain': 'Adaptive Instance Normalization for fast arbitrary style transfer with good quality.',
+        'attention': 'Uses self-attention mechanisms to better capture and transfer style patterns.'
+    };
+    
+    // Method parameters
+    const methodParams = {
+        'vgg': {
+            iterations: true,
+            styleWeight: true,
+            contentWeight: true,
+            alpha: false
+        },
+        'fast': {
+            iterations: false,
+            styleWeight: false,
+            contentWeight: false,
+            alpha: false
+        },
+        'adain': {
+            iterations: false,
+            styleWeight: false,
+            contentWeight: false,
+            alpha: true
+        },
+        'attention': {
+            iterations: false,
+            styleWeight: false,
+            contentWeight: false,
+            alpha: true
+        }
+    };
     
     // Initialize
     loadPredefinedStyles();
     setupEventListeners();
+    updateMethodParams();
     
     /**
      * Load predefined styles from the server
@@ -50,7 +99,6 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(styles => {
                 if (styles.length > 0) {
-                    noStylesMessage.classList.add('d-none');
                     styles.forEach(style => {
                         const styleItem = document.createElement('div');
                         styleItem.className = 'style-item';
@@ -59,9 +107,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         const styleImg = document.createElement('img');
                         styleImg.src = style.path;
                         styleImg.alt = style.name;
-                        styleImg.title = style.name;
+                        styleImg.className = 'img-fluid';
+                        
+                        const styleName = document.createElement('div');
+                        styleName.className = 'style-name';
+                        styleName.textContent = style.name;
                         
                         styleItem.appendChild(styleImg);
+                        styleItem.appendChild(styleName);
                         styleGallery.appendChild(styleItem);
                         
                         styleItem.addEventListener('click', () => {
@@ -119,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Clear selected style
                     selectedStyleId = null;
-                    document.querySelectorAll('.style-item').forEach(item => {
+                    document.querySelectorAll('.style-item.selected').forEach(item => {
                         item.classList.remove('selected');
                     });
                     
@@ -133,32 +186,72 @@ document.addEventListener('DOMContentLoaded', function() {
         // Transfer button
         transferButton.addEventListener('click', applyStyleTransfer);
         
-        // Range inputs
-        imageSizeRange.addEventListener('input', () => {
-            imageSizeValue.textContent = imageSizeRange.value;
-        });
-        
-        styleWeightRange.addEventListener('input', () => {
-            const value = Math.pow(10, parseFloat(styleWeightRange.value));
-            styleWeightValue.textContent = Math.round(value);
-        });
-        
-        contentWeightRange.addEventListener('input', () => {
-            contentWeightValue.textContent = contentWeightRange.value;
+        // Download button
+        downloadButton.addEventListener('click', () => {
+            if (resultImageUrl) {
+                const link = document.createElement('a');
+                link.href = resultImageUrl;
+                link.download = 'styled_image.jpg';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
         });
         
         // Method select
-        methodSelect.addEventListener('change', () => {
-            if (methodSelect.value === 'fast') {
-                // Disable style weight and content weight for fast method
-                styleWeightRange.disabled = true;
-                contentWeightRange.disabled = true;
-            } else {
-                // Enable style weight and content weight for other methods
-                styleWeightRange.disabled = false;
-                contentWeightRange.disabled = false;
-            }
+        methodSelect.addEventListener('change', updateMethodParams);
+        
+        // Parameter sliders
+        iterations.addEventListener('input', () => {
+            iterationsValue.textContent = iterations.value;
         });
+        
+        styleWeight.addEventListener('input', () => {
+            styleWeightValue.textContent = `1e${styleWeight.value}`;
+        });
+        
+        contentWeight.addEventListener('input', () => {
+            contentWeightValue.textContent = contentWeight.value;
+        });
+        
+        alpha.addEventListener('input', () => {
+            alphaValue.textContent = alpha.value;
+        });
+    }
+    
+    /**
+     * Update parameters based on selected method
+     */
+    function updateMethodParams() {
+        const method = methodSelect.value;
+        
+        // Update method description
+        methodDescription.textContent = methodDescriptions[method];
+        
+        // Show/hide parameters based on method
+        if (methodParams[method].iterations) {
+            iterationsContainer.classList.remove('d-none');
+        } else {
+            iterationsContainer.classList.add('d-none');
+        }
+        
+        if (methodParams[method].styleWeight) {
+            styleWeightContainer.classList.remove('d-none');
+        } else {
+            styleWeightContainer.classList.add('d-none');
+        }
+        
+        if (methodParams[method].contentWeight) {
+            contentWeightContainer.classList.remove('d-none');
+        } else {
+            contentWeightContainer.classList.add('d-none');
+        }
+        
+        if (methodParams[method].alpha) {
+            alphaContainer.classList.remove('d-none');
+        } else {
+            alphaContainer.classList.add('d-none');
+        }
     }
     
     /**
@@ -169,14 +262,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function selectPredefinedStyle(styleId, stylePath) {
         // Update selected style
         selectedStyleId = styleId;
-        styleImageData = null;
         
-        // Update UI
+        // Update style image preview
         styleImage.src = stylePath;
         styleImage.classList.remove('d-none');
         styleImagePreview.querySelector('.upload-placeholder').classList.add('d-none');
         
-        // Update style gallery
+        // Clear custom style image
+        styleImageData = null;
+        
+        // Update selected style in gallery
         document.querySelectorAll('.style-item').forEach(item => {
             if (item.dataset.styleId === styleId) {
                 item.classList.add('selected');
@@ -192,119 +287,125 @@ document.addEventListener('DOMContentLoaded', function() {
      * Update the state of the transfer button based on selected images
      */
     function updateTransferButtonState() {
-        if (contentImageData && (styleImageData || selectedStyleId)) {
+        if ((contentImageData || contentImage.src) && (styleImageData || selectedStyleId || styleImage.src)) {
             transferButton.disabled = false;
         } else {
             transferButton.disabled = true;
         }
+        
+        // Hide result and download button when inputs change
+        resultImage.classList.add('d-none');
+        downloadButton.disabled = true;
+        document.querySelector('.result-placeholder').classList.remove('d-none');
     }
     
     /**
      * Apply style transfer to the selected images
      */
     function applyStyleTransfer() {
-        // Check if content and style images are selected
-        if (!contentImageData || (!styleImageData && !selectedStyleId)) {
-            alert('Please select both content and style images');
+        // Check if images are selected
+        if (!contentImageData && !contentImage.src) {
+            alert('Please select a content image');
+            return;
+        }
+        
+        if (!styleImageData && !selectedStyleId && !styleImage.src) {
+            alert('Please select a style image or choose a predefined style');
             return;
         }
         
         // Show loading spinner
         loadingSpinner.classList.remove('d-none');
+        document.querySelector('.result-placeholder').classList.add('d-none');
         resultImage.classList.add('d-none');
         transferButton.disabled = true;
-        processingTimeContainer.classList.add('d-none');
+        downloadButton.disabled = true;
         
         // Get parameters
         const method = methodSelect.value;
-        const imageSize = parseInt(imageSizeRange.value);
-        const styleWeight = Math.pow(10, parseFloat(styleWeightRange.value));
-        const contentWeight = parseFloat(contentWeightRange.value);
+        const imageSizeValue = parseInt(imageSize.value);
+        const styleWeightValue = Math.pow(10, parseInt(styleWeight.value));
+        const contentWeightValue = parseFloat(contentWeight.value);
+        const iterationsValue = parseInt(iterations.value);
+        const alphaValue = parseFloat(alpha.value);
         
-        // Create request data
-        const requestData = {
-            contentImage: contentImageData,
-            method: method,
-            imageSize: imageSize,
-            styleWeight: styleWeight,
-            contentWeight: contentWeight
-        };
+        // Prepare form data
+        const formData = new FormData();
         
-        // Add style image or style ID
-        if (styleImageData) {
-            requestData.styleImage = styleImageData;
-        } else if (selectedStyleId) {
-            requestData.styleId = selectedStyleId;
+        // Add parameters
+        formData.append('method', method);
+        formData.append('imageSize', imageSizeValue);
+        formData.append('styleWeight', styleWeightValue);
+        formData.append('contentWeight', contentWeightValue);
+        formData.append('iterations', iterationsValue);
+        formData.append('alpha', alphaValue);
+        
+        // Add images
+        if (contentImageData) {
+            // Convert data URL to Blob
+            const contentBlob = dataURLtoBlob(contentImageData);
+            formData.append('content', contentBlob, 'content.jpg');
         }
         
-        // Send request to API
-        fetch('/api/transfer-base64', {
+        if (styleImageData) {
+            // Convert data URL to Blob
+            const styleBlob = dataURLtoBlob(styleImageData);
+            formData.append('style', styleBlob, 'style.jpg');
+        } else if (selectedStyleId) {
+            formData.append('styleId', selectedStyleId);
+        }
+        
+        // Send request to server
+        fetch('/api/transfer', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestData)
+            body: formData
         })
         .then(response => response.json())
         .then(data => {
+            // Hide loading spinner
+            loadingSpinner.classList.add('d-none');
+            transferButton.disabled = false;
+            
             if (data.success) {
-                // Show result
-                resultImage.src = data.resultImage || data.resultUrl;
+                // Show result image
+                resultImage.src = data.resultUrl;
                 resultImage.classList.remove('d-none');
+                resultImageUrl = data.resultUrl;
+                
+                // Enable download button
+                downloadButton.disabled = false;
                 
                 // Show processing time
-                processingTime.textContent = data.processingTime;
-                processingTimeContainer.classList.remove('d-none');
-                
-                // Add download button
-                addDownloadButton(data.resultImage || data.resultUrl);
+                console.log(`Processing time: ${data.processingTime} seconds using ${data.method} method`);
             } else {
-                alert('Error: ' + data.error);
+                alert(`Error: ${data.error}`);
             }
         })
         .catch(error => {
             console.error('Error applying style transfer:', error);
-            alert('An error occurred while applying style transfer');
-        })
-        .finally(() => {
-            // Hide loading spinner
             loadingSpinner.classList.add('d-none');
             transferButton.disabled = false;
+            alert('Error applying style transfer. Please try again.');
         });
     }
     
     /**
-     * Add a download button to the result image
-     * @param {string} imageUrl - URL or data URL of the result image
+     * Convert a data URL to a Blob
+     * @param {string} dataURL - Data URL to convert
+     * @returns {Blob} - Converted Blob
      */
-    function addDownloadButton(imageUrl) {
-        // Remove existing download button
-        const existingButton = document.querySelector('.download-btn');
-        if (existingButton) {
-            existingButton.remove();
+    function dataURLtoBlob(dataURL) {
+        const parts = dataURL.split(';base64,');
+        const contentType = parts[0].split(':')[1];
+        const raw = window.atob(parts[1]);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        
+        for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
         }
         
-        // Create download button
-        const downloadButton = document.createElement('button');
-        downloadButton.className = 'download-btn';
-        downloadButton.innerHTML = '<i class="fas fa-download"></i>';
-        downloadButton.title = 'Download Image';
-        
-        // Add click event
-        downloadButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            
-            // Create a temporary link
-            const link = document.createElement('a');
-            link.href = imageUrl;
-            link.download = 'styled_image.jpg';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        });
-        
-        // Add button to result container
-        document.getElementById('resultImageContainer').querySelector('.image-preview').appendChild(downloadButton);
+        return new Blob([uInt8Array], { type: contentType });
     }
     
     // Handle drag and drop for content image
@@ -314,19 +415,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     contentImagePreview.addEventListener('dragleave', () => {
-        contentImagePreview.style.borderColor = '#dee2e6';
+        contentImagePreview.style.borderColor = '';
     });
     
     contentImagePreview.addEventListener('drop', (e) => {
         e.preventDefault();
-        contentImagePreview.style.borderColor = '#dee2e6';
+        contentImagePreview.style.borderColor = '';
         
         if (e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
+            
             if (file.type.match('image.*')) {
-                contentImageInput.files = e.dataTransfer.files;
-                
                 const reader = new FileReader();
+                
                 reader.onload = (event) => {
                     contentImageData = event.target.result;
                     contentImage.src = contentImageData;
@@ -347,19 +448,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     styleImagePreview.addEventListener('dragleave', () => {
-        styleImagePreview.style.borderColor = '#dee2e6';
+        styleImagePreview.style.borderColor = '';
     });
     
     styleImagePreview.addEventListener('drop', (e) => {
         e.preventDefault();
-        styleImagePreview.style.borderColor = '#dee2e6';
+        styleImagePreview.style.borderColor = '';
         
         if (e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
+            
             if (file.type.match('image.*')) {
-                styleImageInput.files = e.dataTransfer.files;
-                
                 const reader = new FileReader();
+                
                 reader.onload = (event) => {
                     styleImageData = event.target.result;
                     styleImage.src = styleImageData;
@@ -368,7 +469,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Clear selected style
                     selectedStyleId = null;
-                    document.querySelectorAll('.style-item').forEach(item => {
+                    document.querySelectorAll('.style-item.selected').forEach(item => {
                         item.classList.remove('selected');
                     });
                     

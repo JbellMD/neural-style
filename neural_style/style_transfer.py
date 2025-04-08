@@ -16,6 +16,8 @@ import copy
 
 from .models.vgg import VGG
 from .models.transformer_net import TransformerNet
+from .models.adain import AdaINModel
+from .models.attention import AttentionStyleTransfer
 from .utils.image_utils import load_image, save_image, preprocess_image, deprocess_image
 from .utils.logging import get_logger
 
@@ -90,13 +92,27 @@ class StyleTransfer:
                 
         elif self.method == 'adain':
             # Adaptive Instance Normalization (AdaIN)
-            # Will be implemented in future versions
-            raise NotImplementedError("AdaIN method is not yet implemented")
+            self.model = AdaINModel().to(self.device)
+            
+            # Load pre-trained decoder if provided
+            if model_path and os.path.exists(model_path):
+                state_dict = torch.load(model_path, map_location=self.device)
+                self.model.decoder.load_state_dict(state_dict)
+                logger.info(f"Loaded pre-trained AdaIN decoder from {model_path}")
+            else:
+                logger.info("Using default AdaIN model (no pre-trained decoder)")
             
         elif self.method == 'attention':
             # Style-Attentional Networks
-            # Will be implemented in future versions
-            raise NotImplementedError("Attention-based method is not yet implemented")
+            self.model = AttentionStyleTransfer().to(self.device)
+            
+            # Load pre-trained model if provided
+            if model_path and os.path.exists(model_path):
+                state_dict = torch.load(model_path, map_location=self.device)
+                self.model.load_state_dict(state_dict)
+                logger.info(f"Loaded pre-trained attention model from {model_path}")
+            else:
+                logger.info("Using default attention model (no pre-trained weights)")
     
     def transfer(
         self,
@@ -110,6 +126,7 @@ class StyleTransfer:
         iterations=300,
         optimizer='lbfgs',
         lr=1.0,
+        alpha=1.0,
         show_progress=True
     ):
         """
@@ -126,6 +143,7 @@ class StyleTransfer:
             iterations (int): Number of optimization iterations
             optimizer (str): Optimizer to use ('lbfgs', 'adam')
             lr (float): Learning rate for optimizer
+            alpha (float): Style interpolation weight (for AdaIN and Attention methods)
             show_progress (bool): Whether to show progress bar
             
         Returns:
@@ -136,14 +154,16 @@ class StyleTransfer:
             content_image = load_image(content_image, image_size)
         content_tensor = preprocess_image(content_image).to(self.device)
         
-        if self.method == 'vgg':
+        if self.method in ['vgg', 'adain', 'attention']:
             if style_image is None:
-                raise ValueError("Style image is required for VGG method")
+                raise ValueError(f"Style image is required for {self.method} method")
                 
             if isinstance(style_image, str):
                 style_image = load_image(style_image, image_size)
             style_tensor = preprocess_image(style_image).to(self.device)
-            
+        
+        # Apply style transfer based on method
+        if self.method == 'vgg':
             # Apply VGG-based style transfer
             output_tensor = self._vgg_style_transfer(
                 content_tensor, 
@@ -156,19 +176,26 @@ class StyleTransfer:
                 lr=lr,
                 show_progress=show_progress
             )
-            
         elif self.method == 'fast':
             # Apply fast style transfer
             with torch.no_grad():
                 output_tensor = self.model(content_tensor).cpu()
+        elif self.method == 'adain':
+            # Apply AdaIN style transfer
+            with torch.no_grad():
+                output_tensor = self.model(content_tensor, style_tensor, alpha=alpha).cpu()
+        elif self.method == 'attention':
+            # Apply attention-based style transfer
+            with torch.no_grad():
+                output_tensor = self.model(content_tensor, style_tensor, alpha=alpha).cpu()
         
-        # Convert output tensor to PIL image
-        output_image = deprocess_image(output_tensor)
+        # Convert tensor to image
+        output_image = deprocess_image(output_tensor.clone())
         
         # Save output image if path is provided
         if output_path:
             save_image(output_image, output_path)
-            logger.info(f"Saved output image to {output_path}")
+            logger.info(f"Saved styled image to {output_path}")
         
         return output_image
     
@@ -294,69 +321,180 @@ class StyleTransfer:
         w_tv = torch.mean((image[:, :, :, 1:] - image[:, :, :, :-1]).abs())
         return h_tv + w_tv
     
-    def train_fast_model(
+    def batch_transfer(
         self,
-        style_image,
-        dataset_path,
-        output_model_path,
-        epochs=2,
-        batch_size=4,
-        image_size=256,
-        style_weight=1e6,
-        content_weight=1,
-        tv_weight=1e-6,
-        lr=1e-3,
-        log_interval=100,
-        checkpoint_interval=1000
+        content_dir,
+        style_image=None,
+        output_dir=None,
+        image_size=512,
+        recursive=False,
+        **kwargs
     ):
         """
-        Train a fast style transfer model on a dataset of content images.
+        Apply style transfer to a batch of content images.
         
         Args:
-            style_image (str): Path to style image
-            dataset_path (str): Path to dataset of content images
+            content_dir (str): Directory containing content images
+            style_image (str or PIL.Image): Style image path or PIL image
+            output_dir (str): Directory to save output images
+            image_size (int): Size of the output images
+            recursive (bool): Whether to search for images recursively
+            **kwargs: Additional arguments for style transfer
+            
+        Returns:
+            list: List of output image paths
+        """
+        # Create output directory if it doesn't exist
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        
+        # Get list of image files
+        if recursive:
+            image_files = []
+            for root, _, files in os.walk(content_dir):
+                for file in files:
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        image_files.append(os.path.join(root, file))
+        else:
+            image_files = [
+                os.path.join(content_dir, f) for f in os.listdir(content_dir)
+                if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+            ]
+        
+        # Load style image once
+        if self.method != 'fast' and style_image is None:
+            raise ValueError(f"Style image is required for {self.method} method")
+        
+        if isinstance(style_image, str) and self.method != 'fast':
+            style_image = load_image(style_image, image_size)
+        
+        # Process each content image
+        output_paths = []
+        
+        for i, content_path in enumerate(tqdm(image_files, desc="Processing images")):
+            # Generate output path
+            if output_dir:
+                filename = os.path.basename(content_path)
+                output_path = os.path.join(output_dir, f"styled_{filename}")
+            else:
+                output_path = None
+            
+            # Apply style transfer
+            try:
+                self.transfer(
+                    content_image=content_path,
+                    style_image=style_image,
+                    output_path=output_path,
+                    image_size=image_size,
+                    **kwargs
+                )
+                
+                if output_path:
+                    output_paths.append(output_path)
+                    
+            except Exception as e:
+                logger.error(f"Error processing {content_path}: {str(e)}")
+        
+        return output_paths
+    
+    def train_adain_model(
+        self,
+        content_dataset,
+        style_dataset,
+        output_model_path,
+        epochs=10,
+        batch_size=8,
+        learning_rate=1e-4,
+        content_weight=1.0,
+        style_weight=10.0
+    ):
+        """
+        Train an AdaIN model on datasets of content and style images.
+        
+        Args:
+            content_dataset: Dataset of content images
+            style_dataset: Dataset of style images
             output_model_path (str): Path to save trained model
             epochs (int): Number of training epochs
             batch_size (int): Batch size
-            image_size (int): Size of training images
-            style_weight (float): Weight of style loss
+            learning_rate (float): Learning rate
             content_weight (float): Weight of content loss
-            tv_weight (float): Weight of total variation loss
-            lr (float): Learning rate
-            log_interval (int): Interval for logging training progress
-            checkpoint_interval (int): Interval for saving model checkpoints
+            style_weight (float): Weight of style loss
             
         Returns:
             None
         """
-        if self.method != 'fast':
-            raise ValueError("This method is only available for fast style transfer")
+        from .models.adain import train_adain_model
         
-        # Will be implemented in a future version
-        raise NotImplementedError("Training fast style transfer models is not yet implemented")
+        if self.method != 'adain':
+            raise ValueError("Method must be 'adain' to train an AdaIN model")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
+        
+        # Train model
+        train_adain_model(
+            self.model,
+            content_dataset,
+            style_dataset,
+            output_model_path,
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            content_weight=content_weight,
+            style_weight=style_weight,
+            device=self.device
+        )
+        
+        logger.info(f"Saved trained AdaIN model to {output_model_path}")
     
-    def interpolate_styles(
+    def train_attention_model(
         self,
-        content_image,
-        style_images,
-        weights=None,
-        output_path=None,
-        image_size=512,
-        **kwargs
+        content_dataset,
+        style_dataset,
+        output_model_path,
+        epochs=10,
+        batch_size=4,
+        learning_rate=1e-4,
+        content_weight=1.0,
+        style_weight=10.0
     ):
         """
-        Interpolate between multiple styles.
+        Train an attention-based style transfer model.
         
         Args:
-            content_image (str or PIL.Image): Content image
-            style_images (list): List of style image paths or PIL images
-            weights (list): List of weights for each style
-            output_path (str): Path to save the output image
-            image_size (int): Size of the output image
-            **kwargs: Additional arguments for style transfer
+            content_dataset: Dataset of content images
+            style_dataset: Dataset of style images
+            output_model_path (str): Path to save trained model
+            epochs (int): Number of training epochs
+            batch_size (int): Batch size
+            learning_rate (float): Learning rate
+            content_weight (float): Weight of content loss
+            style_weight (float): Weight of style loss
             
         Returns:
-            PIL.Image: Styled image
+            None
         """
-        # Will be implemented in a future version
-        raise NotImplementedError("Style interpolation is not yet implemented")
+        from .models.attention import train_attention_model
+        
+        if self.method != 'attention':
+            raise ValueError("Method must be 'attention' to train an attention model")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
+        
+        # Train model
+        train_attention_model(
+            self.model,
+            content_dataset,
+            style_dataset,
+            output_model_path,
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            content_weight=content_weight,
+            style_weight=style_weight,
+            device=self.device
+        )
+        
+        logger.info(f"Saved trained attention model to {output_model_path}")

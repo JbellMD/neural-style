@@ -48,6 +48,33 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max upload size
 # Initialize style transfer model
 style_transfer_model = None
 
+# Available style transfer methods
+METHODS = {
+    'vgg': {
+        'id': 'vgg',
+        'name': 'VGG (Gatys)',
+        'description': 'Original neural style transfer algorithm. Produces high-quality results but slower.',
+        'params': ['iterations', 'styleWeight', 'contentWeight']
+    },
+    'fast': {
+        'id': 'fast',
+        'name': 'Fast Neural Style',
+        'description': 'Real-time style transfer using a pre-trained model. Very fast but limited to trained styles.',
+        'params': []
+    },
+    'adain': {
+        'id': 'adain',
+        'name': 'AdaIN',
+        'description': 'Adaptive Instance Normalization for fast arbitrary style transfer with good quality.',
+        'params': ['alpha']
+    },
+    'attention': {
+        'id': 'attention',
+        'name': 'Attention-based',
+        'description': 'Uses self-attention mechanisms to better capture and transfer style patterns.',
+        'params': ['alpha']
+    }
+}
 
 def allowed_file(filename):
     """Check if file has allowed extension."""
@@ -59,7 +86,17 @@ def get_style_transfer_model(method='vgg', device=None):
     global style_transfer_model
     
     if style_transfer_model is None or style_transfer_model.method != method:
-        style_transfer_model = StyleTransfer(method=method, device=device)
+        # For fast method, try to find a pre-trained model
+        model_path = None
+        if method == 'fast':
+            model_dir = os.path.join('models', 'fast')
+            if os.path.exists(model_dir):
+                model_files = [f for f in os.listdir(model_dir) if f.endswith('.pth')]
+                if model_files:
+                    model_path = os.path.join(model_dir, model_files[0])
+                    logger.info(f"Using pre-trained fast model: {model_path}")
+        
+        style_transfer_model = StyleTransfer(method=method, device=device, model_path=model_path)
         logger.info(f"Initialized style transfer model with method: {method}")
     
     return style_transfer_model
@@ -81,10 +118,17 @@ def get_available_styles():
     return styles
 
 
+def get_available_methods():
+    """Get list of available style transfer methods with descriptions."""
+    return list(METHODS.values())
+
+
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html', styles=get_available_styles())
+    return render_template('index.html', 
+                          styles=get_available_styles(),
+                          methods=get_available_methods())
 
 
 @app.route('/static/<path:path>')
@@ -100,9 +144,14 @@ def get_styles():
     return jsonify(get_available_styles())
 
 
+@app.route('/api/methods')
+def get_methods():
+    """Get available style transfer methods."""
+    return jsonify(get_available_methods())
+
+
 @app.route('/api/transfer', methods=['POST'])
 def transfer_style():
-    """Apply style transfer to an image."""
     try:
         # Check if content and style files are provided
         if 'content' not in request.files:
@@ -139,6 +188,12 @@ def transfer_style():
         image_size = int(request.form.get('imageSize', 512))
         style_weight = float(request.form.get('styleWeight', 1e6))
         content_weight = float(request.form.get('contentWeight', 1.0))
+        iterations = int(request.form.get('iterations', 300))
+        alpha = float(request.form.get('alpha', 1.0))
+        
+        # Check if method is valid
+        if method not in METHODS:
+            return jsonify({'error': f'Invalid method: {method}'}), 400
         
         # Save content image
         content_filename = secure_filename(content_file.filename)
@@ -153,23 +208,43 @@ def transfer_style():
         model = get_style_transfer_model(method=method)
         start_time = time.time()
         
-        result = model.transfer(
-            content_image=content_path,
-            style_image=style_path,
-            output_path=output_path,
-            image_size=image_size,
-            style_weight=style_weight,
-            content_weight=content_weight,
-            show_progress=False
+        # Set parameters based on method
+        params = {
+            'output_image': output_path,
+            'content_scale': image_size / 512.0,  # Scale relative to 512px
+        }
+        
+        if method == 'vgg':
+            params.update({
+                'content_weight': content_weight,
+                'style_weight': style_weight,
+                'iterations': iterations
+            })
+        elif method in ['adain', 'attention']:
+            params.update({
+                'alpha': alpha
+            })
+        
+        # Apply style transfer with the selected method
+        model.transfer(
+            content_path, 
+            style_path, 
+            method=method,
+            **params
         )
         
-        elapsed_time = time.time() - start_time
+        processing_time = round(time.time() - start_time, 2)
+        
+        # Log the result
+        logger.info(f"Style transfer completed: {method} method, {processing_time}s, size={image_size}")
         
         # Return result
+        result_url = f'/static/results/{output_filename}'
         return jsonify({
             'success': True,
-            'resultUrl': f'/static/results/{output_filename}',
-            'processingTime': round(elapsed_time, 2)
+            'resultUrl': result_url,
+            'method': method,
+            'processingTime': processing_time
         })
         
     except Exception as e:
@@ -179,7 +254,6 @@ def transfer_style():
 
 @app.route('/api/transfer-base64', methods=['POST'])
 def transfer_style_base64():
-    """Apply style transfer to base64-encoded images."""
     try:
         data = request.get_json()
         
@@ -205,6 +279,18 @@ def transfer_style_base64():
         else:
             return jsonify({'error': 'No style image or style ID provided'}), 400
         
+        # Get parameters
+        method = data.get('method', 'vgg')
+        image_size = int(data.get('imageSize', 512))
+        style_weight = float(data.get('styleWeight', 1e6))
+        content_weight = float(data.get('contentWeight', 1.0))
+        iterations = int(data.get('iterations', 300))
+        alpha = float(data.get('alpha', 1.0))
+        
+        # Check if method is valid
+        if method not in METHODS:
+            return jsonify({'error': f'Invalid method: {method}'}), 400
+        
         # Decode base64 content image
         content_data = base64.b64decode(data['contentImage'].split(',')[1])
         content_image = Image.open(io.BytesIO(content_data))
@@ -212,12 +298,6 @@ def transfer_style_base64():
         # Save content image
         content_path = os.path.join(app.config['UPLOAD_FOLDER'], f"content_{uuid.uuid4()}.jpg")
         content_image.save(content_path)
-        
-        # Get parameters
-        method = data.get('method', 'vgg')
-        image_size = int(data.get('imageSize', 512))
-        style_weight = float(data.get('styleWeight', 1e6))
-        content_weight = float(data.get('contentWeight', 1.0))
         
         # Generate output filename
         output_filename = f"result_{uuid.uuid4()}.jpg"
@@ -227,28 +307,49 @@ def transfer_style_base64():
         model = get_style_transfer_model(method=method)
         start_time = time.time()
         
-        result = model.transfer(
-            content_image=content_path,
-            style_image=style_path,
-            output_path=output_path,
-            image_size=image_size,
-            style_weight=style_weight,
-            content_weight=content_weight,
-            show_progress=False
+        # Set parameters based on method
+        params = {
+            'output_image': output_path,
+            'content_scale': image_size / 512.0,  # Scale relative to 512px
+        }
+        
+        if method == 'vgg':
+            params.update({
+                'content_weight': content_weight,
+                'style_weight': style_weight,
+                'iterations': iterations
+            })
+        elif method in ['adain', 'attention']:
+            params.update({
+                'alpha': alpha
+            })
+        
+        # Apply style transfer with the selected method
+        model.transfer(
+            content_path, 
+            style_path, 
+            method=method,
+            **params
         )
         
-        elapsed_time = time.time() - start_time
-        
         # Convert result to base64
-        with open(output_path, 'rb') as f:
-            result_base64 = base64.b64encode(f.read()).decode('utf-8')
+        buffer = io.BytesIO()
+        result = Image.open(output_path)
+        result.save(buffer, format='JPEG')
+        img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        processing_time = round(time.time() - start_time, 2)
+        
+        # Log the result
+        logger.info(f"Style transfer completed: {method} method, {processing_time}s, size={image_size}")
         
         # Return result
         return jsonify({
             'success': True,
             'resultUrl': f'/static/results/{output_filename}',
-            'resultImage': f'data:image/jpeg;base64,{result_base64}',
-            'processingTime': round(elapsed_time, 2)
+            'resultImage': f'data:image/jpeg;base64,{img_str}',
+            'processingTime': processing_time,
+            'method': method
         })
         
     except Exception as e:

@@ -111,33 +111,84 @@
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <h5>Settings</h5>
-                                <div class="mb-3">
-                                    <label for="methodSelect" class="form-label">Method</label>
-                                    <select class="form-select" id="methodSelect">
-                                        <option value="vgg" selected>VGG (Gatys et al.)</option>
-                                        <option value="fast">Fast Neural Style</option>
-                                    </select>
-                                </div>
-                                <div class="mb-3">
-                                    <label for="imageSizeRange" class="form-label">Image Size: <span id="imageSizeValue">512</span>px</label>
-                                    <input type="range" class="form-range" id="imageSizeRange" min="256" max="1024" step="64" value="512">
-                                </div>
-                                <div class="mb-3">
-                                    <label for="styleWeightRange" class="form-label">Style Weight: <span id="styleWeightValue">1000000</span></label>
-                                    <input type="range" class="form-range" id="styleWeightRange" min="4" max="8" step="0.1" value="6">
-                                </div>
-                                <div class="mb-3">
-                                    <label for="contentWeightRange" class="form-label">Content Weight: <span id="contentWeightValue">1</span></label>
-                                    <input type="range" class="form-range" id="contentWeightRange" min="0" max="2" step="0.1" value="1">
-                                </div>
-                                <div class="d-grid">
-                                    <button class="btn btn-primary" id="transferButton" disabled>
-                                        <i class="fas fa-magic me-2"></i>Apply Style Transfer
-                                    </button>
-                                </div>
-                                <div class="mt-3 text-center d-none" id="processingTimeContainer">
-                                    <p class="text-muted">Processing time: <span id="processingTime">0</span> seconds</p>
+                                <h5>Style Transfer Settings</h5>
+                                <div class="settings-container">
+                                    <div class="mb-3">
+                                        <label for="methodSelect" class="form-label">Method</label>
+                                        <select class="form-select" id="methodSelect">
+                                            <option value="vgg" selected>VGG (Gatys et al.)</option>
+                                            <option value="fast">Fast Neural Style</option>
+                                            <option value="adain">AdaIN</option>
+                                            <option value="attention">Attention-based</option>
+                                        </select>
+                                        <div class="form-text" id="methodDescription">
+                                            VGG (Gatys et al.) - The original neural style transfer algorithm that optimizes an image to match content and style features.
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3" id="imageSizeContainer">
+                                        <label for="imageSize" class="form-label">Image Size</label>
+                                        <select class="form-select" id="imageSize">
+                                            <option value="256">Small (256px)</option>
+                                            <option value="384">Medium (384px)</option>
+                                            <option value="512" selected>Large (512px)</option>
+                                            <option value="768">Extra Large (768px)</option>
+                                        </select>
+                                        <div class="form-text">Larger sizes produce better quality but take longer to process</div>
+                                    </div>
+                                    
+                                    <div class="mb-3 param-control" id="iterationsContainer">
+                                        <label for="iterations" class="form-label">Iterations</label>
+                                        <input type="range" class="form-range" id="iterations" min="50" max="500" step="50" value="300">
+                                        <div class="d-flex justify-content-between">
+                                            <span>50</span>
+                                            <span id="iterationsValue">300</span>
+                                            <span>500</span>
+                                        </div>
+                                        <div class="form-text">More iterations produce better results but take longer</div>
+                                    </div>
+                                    
+                                    <div class="mb-3 param-control" id="styleWeightContainer">
+                                        <label for="styleWeight" class="form-label">Style Weight</label>
+                                        <input type="range" class="form-range" id="styleWeight" min="3" max="8" step="1" value="6">
+                                        <div class="d-flex justify-content-between">
+                                            <span>1e3</span>
+                                            <span id="styleWeightValue">1e6</span>
+                                            <span>1e8</span>
+                                        </div>
+                                        <div class="form-text">Higher values emphasize style over content</div>
+                                    </div>
+                                    
+                                    <div class="mb-3 param-control" id="contentWeightContainer">
+                                        <label for="contentWeight" class="form-label">Content Weight</label>
+                                        <input type="range" class="form-range" id="contentWeight" min="0" max="2" step="0.1" value="1">
+                                        <div class="d-flex justify-content-between">
+                                            <span>0</span>
+                                            <span id="contentWeightValue">1.0</span>
+                                            <span>2</span>
+                                        </div>
+                                        <div class="form-text">Higher values preserve more of the original content</div>
+                                    </div>
+                                    
+                                    <div class="mb-3 param-control" id="alphaContainer">
+                                        <label for="alpha" class="form-label">Style Strength (Alpha)</label>
+                                        <input type="range" class="form-range" id="alpha" min="0" max="1" step="0.1" value="1">
+                                        <div class="d-flex justify-content-between">
+                                            <span>0</span>
+                                            <span id="alphaValue">1.0</span>
+                                            <span>1</span>
+                                        </div>
+                                        <div class="form-text">Controls the strength of style transfer (for AdaIN and Attention methods)</div>
+                                    </div>
+                                    
+                                    <div class="d-grid gap-2">
+                                        <button class="btn btn-primary" id="transferButton" disabled>
+                                            <i class="fas fa-magic me-2"></i>Apply Style Transfer
+                                        </button>
+                                        <button class="btn btn-outline-secondary" id="downloadButton" disabled>
+                                            <i class="fas fa-download me-2"></i>Download Result
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -150,17 +201,27 @@
             <div class="col-lg-10 mx-auto">
                 <div class="card shadow">
                     <div class="card-body">
-                        <h2 class="card-title">About Neural Style Transfer</h2>
+                        <h3 class="card-title">About Neural Style Transfer</h3>
                         <p>
                             Neural Style Transfer is a technique that uses deep neural networks to apply the style of one image to the content of another.
-                            This application implements several methods for neural style transfer:
+                            This application implements multiple style transfer methods:
                         </p>
                         <ul>
-                            <li><strong>VGG-based Neural Style Transfer (Gatys et al.)</strong> - The original neural style transfer algorithm that uses optimization to generate styled images.</li>
-                            <li><strong>Fast Neural Style Transfer (Johnson et al.)</strong> - A feed-forward network that can generate styled images in real-time.</li>
+                            <li>
+                                <strong>VGG (Gatys et al.)</strong> - The original neural style transfer algorithm that optimizes an image to match content and style features.
+                            </li>
+                            <li>
+                                <strong>Fast Neural Style</strong> - A real-time style transfer method using a pre-trained feed-forward network.
+                            </li>
+                            <li>
+                                <strong>AdaIN</strong> - Adaptive Instance Normalization for fast arbitrary style transfer with good quality results.
+                            </li>
+                            <li>
+                                <strong>Attention-based</strong> - Uses self-attention mechanisms to better capture and transfer style patterns across the image.
+                            </li>
                         </ul>
                         <p>
-                            The implementation uses PyTorch for deep learning and provides both a web interface and a command-line tool for applying style transfer.
+                            The application is built using PyTorch for the neural network models and Flask for the web interface.
                         </p>
                     </div>
                 </div>
@@ -171,24 +232,24 @@
             <div class="col-lg-10 mx-auto">
                 <div class="card shadow">
                     <div class="card-body">
-                        <h2 class="card-title">Examples</h2>
+                        <h3 class="card-title">Example Results</h3>
                         <div class="row">
                             <div class="col-md-4">
-                                <div class="card mb-4">
-                                    <div class="card-header">Content</div>
-                                    <img src="/static/examples/content/landscape.jpg" class="card-img-top" alt="Content Image">
+                                <div class="example-card">
+                                    <h5>VGG Method</h5>
+                                    <img src="/static/images/examples/vgg_example.jpg" alt="VGG Example" class="img-fluid rounded">
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <div class="card mb-4">
-                                    <div class="card-header">Style</div>
-                                    <img src="/static/examples/styles/starry_night.jpg" class="card-img-top" alt="Style Image">
+                                <div class="example-card">
+                                    <h5>Fast Neural Style</h5>
+                                    <img src="/static/images/examples/fast_example.jpg" alt="Fast Example" class="img-fluid rounded">
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <div class="card mb-4">
-                                    <div class="card-header">Result</div>
-                                    <img src="/static/examples/results/landscape_starry_night.jpg" class="card-img-top" alt="Result Image">
+                                <div class="example-card">
+                                    <h5>AdaIN Method</h5>
+                                    <img src="/static/images/examples/adain_example.jpg" alt="AdaIN Example" class="img-fluid rounded">
                                 </div>
                             </div>
                         </div>
